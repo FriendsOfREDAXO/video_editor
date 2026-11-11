@@ -1,0 +1,53 @@
+{
+    "name": "friendsofredaxo/video_editor",
+    "description": "Videos im REDAXO-6-Medienpool bearbeiten: analysieren, für das Web optimieren, schneiden, Poster wählen, Untertitel (VTT) – mit ffmpeg, Aufträge im Hintergrund",
+    "type": "redaxo-addon",
+    "license": "MIT",
+    "keywords": [
+        "redaxo",
+        "redaxo-addon",
+        "redaxo6",
+        "video",
+        "ffmpeg",
+        "mediapool",
+        "subtitles",
+        "webvtt"
+    ],
+    "homepage": "https://github.com/FriendsOfREDAXO/video_editor",
+    "authors": [
+        {
+            "name": "Thomas Skerbis",
+            "homepage": "https://github.com/skerbis",
+            "role": "Lead"
+        },
+        {
+            "name": "Friends Of REDAXO",
+            "homepage": "https://friendsofredaxo.github.io"
+        }
+    ],
+    "require": {
+        "php": "^8.5",
+        "redaxo/core": "^6.0@dev"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^12.5 || ^13.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "FriendsOfRedaxo\\VideoEditor\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "FriendsOfRedaxo\\VideoEditor\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "redaxo": {
+            "addon-class": "FriendsOfRedaxo\\VideoEditor\\VideoEditorAddon"
+        },
+        "branch-alias": {
+            "dev-main": "1.x-dev"
+        }
+    }
+}
