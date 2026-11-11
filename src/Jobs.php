@@ -29,7 +29,7 @@ final class Jobs
     public const string CANCELED = 'canceled';
 
     /** @param array<string, mixed> $params */
-    public static function add(string $filename, string $kind, array $params, User $user): int
+    public static function add(string $filename, string $kind, array $params, ?User $user): int
     {
         $sql = Sql::factory()->setTable(self::TABLE);
         $sql->setValue('filename', $filename);
@@ -38,7 +38,7 @@ final class Jobs
         $sql->setValue('status', self::QUEUED);
         $sql->setValue('progress', 0);
         $sql->setValue('cancel', 0);
-        $sql->setValue('createuser', $user->login);
+        $sql->setValue('createuser', $user->login ?? 'console');
         $sql->setValue('createdate', date('Y-m-d H:i:s'));
         $sql->insert();
 
@@ -64,6 +64,17 @@ final class Jobs
             'SELECT * FROM ' . self::TABLE . ' WHERE filename = ? ORDER BY id DESC LIMIT ' . $limit,
             [$filename],
         ));
+    }
+
+    /**
+     * Offene Aufträge (laufend und wartend) aller Medien, in der Reihenfolge der Warteschlange.
+     *
+     * @return list<array{id: int, filename: string, status: string, progress: int}>
+     */
+    public static function pending(): array
+    {
+        return array_map(static fn (array $r) => ['id' => (int) $r['id'], 'filename' => (string) $r['filename'], 'status' => (string) $r['status'], 'progress' => (int) $r['progress']],
+            Sql::factory()->getArray('SELECT id, filename, status, progress FROM ' . self::TABLE . ' WHERE status IN (?, ?) ORDER BY id', [self::RUNNING, self::QUEUED]));
     }
 
     /**

@@ -9,8 +9,8 @@ wählen und **Untertitel** schreiben – mit ffmpeg, als Aufträge im Hintergrun
 
 - **Analyse** – Auflösung, Codecs, Dauer, Datenrate, ob das Video sofort startet; dazu eine Bewertung der
   Web-Tauglichkeit mit Empfehlungen, die sich mit einem Klick anwenden lassen
-- **Optimieren** – Vorlagen für das Web (1080p, 720p, 540p, WebM), Archiv, sofort abspielbar, Ton entfernen,
-  Lautstärke angleichen
+- **Optimieren** – Vorlagen für das Web (1080p, 720p, 480p, WebM), Archiv, sofort abspielbar, Ton entfernen,
+  Lautstärke angleichen; mehrere Fassungen in einem Schritt
 - **Schneiden** – Zeitleiste mit Vorschaubildern, teilen, Abschnitte entfernen, Ränder ziehen; schnell ohne Neukodierung
   oder bildgenau
 - **Poster** – Standbild auf das Bild genau wählen
@@ -55,13 +55,13 @@ nach dem vollständigen Laden starten, und für ungeeignete Formate. Zu jedem Hi
 
 ## Optimieren
 
-![Dialog „Video optimieren“ mit Vorlagen und Ergebnis](https://raw.githubusercontent.com/FriendsOfREDAXO/video_editor/assets/ve-optimize.png)
+![Dialog „Video optimieren“: Web 1080p, 720p und 480p angekreuzt, „3 Aufträge, sie laufen nacheinander“](https://raw.githubusercontent.com/FriendsOfREDAXO/video_editor/assets/ve-optimize.png)
 
 | Vorlage | Ergebnis |
 | --- | --- |
 | Web 1080p | H.264/AAC, höchstens 1080 Pixel hoch – passt für fast alles |
 | Web 720p | H.264/AAC, höchstens 720 Pixel hoch – für Inhaltsvideos |
-| Mobil 540p | H.264/AAC, höchstens 540 Pixel hoch – für schwache Verbindungen |
+| Web 480p | H.264/AAC, höchstens 480 Pixel hoch – für Smartphones und schwache Verbindungen |
 | Archiv | H.264 in hoher Qualität, Auflösung bleibt |
 | WebM (VP9) | VP9/Opus, höchstens 1080p – zusätzliche, oft kleinere Fassung |
 | Sofort abspielbar | ohne Neukodierung: Index an den Anfang (`faststart`) |
@@ -70,6 +70,10 @@ nach dem vollständigen Laden starten, und für ungeeignete Formate. Zu jedem Hi
 
 Verkleinert wird nie über die Auflösung des Originals hinaus. Das Ergebnis wird als **neue Fassung** im Medienpool
 angelegt und mit dem Original verknüpft – oder es **ersetzt das Original**, sofern das Format gleich bleibt.
+
+Mehrere Vorlagen lassen sich zusammen ankreuzen, etwa 480p, 720p und 1080p: Jede wird ein eigener Auftrag, sie laufen
+nacheinander. Das Original ersetzen geht nur mit einer Vorlage. Auf der Website wählt der Browser dann die passende
+Fassung je Bildschirmbreite (siehe [Für Entwickler](#für-entwickler)).
 
 ## Schneiden
 
@@ -140,6 +144,19 @@ php bin/console video:work --seconds=60
 
 Der Cronjob `video_editor_work` (jede Minute) holt nach, was liegen geblieben ist – nützlich, wenn `exec` gesperrt ist.
 
+Offene Aufträge zeigt auch die Medienliste: oben ein Hinweis („ein Auftrag läuft (71 %), 2 warten“), am Video sein
+Stand – beides aktualisiert sich, bis alles erledigt ist.
+
+![Medienliste mit dem Hinweis auf einen laufenden Auftrag](https://raw.githubusercontent.com/FriendsOfREDAXO/video_editor/assets/ve-queue.png)
+
+Auch ohne Backend, etwa beim Einrichten einer Website oder für viele Videos auf einmal:
+
+```bash
+php bin/console video:optimize film.mp4 web480,web720,web1080,webm   # Aufträge anlegen (--run: gleich hier abarbeiten)
+php bin/console video:poster film.mp4 4.6                            # Standbild bei 4,6 s als Poster
+php bin/console video:subtitles film.mp4 film-en.srt --lang=en       # Untertitel übernehmen (--role, --label)
+```
+
 ## Rechte
 
 | Wer | Darf |
@@ -170,13 +187,17 @@ Die Bausteine einzeln:
 
 ```php
 $poster = VideoEditor::poster('film.mov');          // Media|null – zuletzt gewähltes Poster
-foreach (VideoEditor::sources('film.mov') as $s) {  // beste Quelle zuerst: WebM, MP4-Web-Fassung, sonst Original
-    echo '<source src="' . $s['url'] . '" type="' . $s['type'] . '">';
+foreach (VideoEditor::sources('film.mov') as $s) {  // in Prüf-Reihenfolge, mit Media-Query für kleine Fassungen
+    echo '<source src="' . $s['url'] . '" type="' . $s['type'] . '"' . ($s['media'] ? ' media="' . $s['media'] . '"' : '') . '>';
 }
-VideoEditor::sources('film.mov', small: true);      // 720p vor 1080p, z. B. für Hintergrundvideos
+VideoEditor::sources('film.mov', small: true);      // ohne 1080p und WebM, z. B. für Hintergrundvideos
 VideoEditor::tracks('film.mov');                    // Untertitel/Kapitel: file, url (text/vtt), lang, kind, label
 VideoEditor::editUrl('film.mov');                   // Bearbeiten im Medienpool – null ohne Recht
 ```
+
+Die Reihenfolge von `sources()`: 480p mit `(max-width: 640px)`, 720p mit `(max-width: 1280px)`, dann WebM, dann die
+größte MP4-Fassung – ohne MP4-Fassung das Original. Der Browser nimmt die erste passende Quelle, das Telefon lädt
+also die kleine Datei.
 
 Wer den Video-Editor nur nutzen will, wenn er installiert ist, prüft vorher
 `class_exists(\FriendsOfRedaxo\VideoEditor\VideoEditor::class)`.

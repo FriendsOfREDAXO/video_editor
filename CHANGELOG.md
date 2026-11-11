@@ -6,8 +6,11 @@ Neuentwicklung für REDAXO 6, mit Ideen aus dem AddOn ffmpeg für REDAXO 5.
 
 - Panel in der Medien-Detailansicht: Vorschau, Analyse (Auflösung, Codecs, Datenrate, Faststart) und Bewertung der
   Web-Tauglichkeit mit Empfehlungen
-- Optimieren mit Vorlagen: Web 1080p/720p, Mobil 540p, Archiv, WebM (VP9), sofort abspielbar, Ton entfernen,
-  Lautstärke angleichen
+- Optimieren mit Vorlagen: Web 1080p/720p/480p, Archiv, WebM (VP9), sofort abspielbar, Ton entfernen,
+  Lautstärke angleichen; mehrere Vorlagen in einem Schritt (je ein Auftrag, nacheinander)
+- `sources()` liefert alle Web-Fassungen mit Media-Query (480p bis 640 px, 720p bis 1280 px), `html()` gibt sie aus
+- Medienliste zeigt offene Aufträge (Hinweis oben, Stand am Video, live)
+- Konsole: `video:optimize`, `video:poster`, `video:subtitles`
 - Schnitt-Editor: Zeitleiste mit Vorschaubildern, teilen, Abschnitte entfernen, Ränder ziehen, Ergebnis abspielen,
   Tastatur; schnell (ohne Neukodierung, ab Schlüsselbild – mit Anzeige) oder bildgenau
 - Poster bildgenau wählen; ein neues Poster ersetzt die Datei des bisherigen

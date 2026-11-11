@@ -7,12 +7,13 @@ use Redaxo\Core\Filesystem\Url;
 use Redaxo\Core\Language\Language;
 use Redaxo\Core\MediaPool\Media;
 
-use function array_search;
+use function array_key_last;
+use function count;
 use function in_array;
 use function is_string;
+use function ksort;
 use function Redaxo\Core\View\escape;
 use function strtolower;
-use function usort;
 
 /**
  * Öffentliche Schnittstelle für Templates, Module und andere AddOns (z. B. fluid): was der Video-Editor zu einem
@@ -32,8 +33,6 @@ use function usort;
 final class VideoEditor
 {
     /** Fassungen für die Auslieferung im Web – andere (stumm, Lautstärke …) bleiben eigenständige Medien */
-    private const array WEB = [Preset::Web1080, Preset::Web720, Preset::Mobile540];
-
     /** Zuletzt gewähltes Poster des Videos */
     public static function poster(string $file): ?Media
     {
@@ -43,10 +42,12 @@ final class VideoEditor
     }
 
     /**
-     * Quellen für <video>, beste zuerst: WebM-Fassung, MP4-Web-Fassung (1080p vor 720p, mit $small 720p zuerst – etwa
-     * für Hintergrundvideos), sonst das Original. Ohne Fassungen nur das Original.
+     * Quellen für <video> in der Reihenfolge, in der der Browser sie prüfen soll: kleinere MP4-Web-Fassungen mit
+     * Media-Query für schmale Bildschirme (480p bis 640 px, 720p bis 1280 px Breite), dann die WebM-Fassung, dann die
+     * größte MP4-Fassung – ohne MP4-Fassung das Original. Mit $small (etwa für Hintergrundvideos) bleiben 1080p und
+     * WebM weg, sofern es eine kleinere Fassung gibt.
      *
-     * @return list<array{file: string, url: string, type: string}>
+     * @return list<array{file: string, url: string, type: string, media: string}>
      */
     public static function sources(string $file, bool $small = false): array
     {
@@ -59,24 +60,37 @@ final class VideoEditor
         foreach (Links::of($file, Links::VERSION) as $link) {
             if (Preset::Webm === $link['preset']) {
                 $webm ??= $link['file'];
-            } elseif (null !== $link['preset'] && in_array($link['preset'], self::WEB, true)) {
-                $mp4[] = $link;
+            } elseif (null !== ($height = $link['preset']?->height())) {
+                // je Höhe die neueste Fassung (Links::of liefert neueste zuerst)
+                $mp4[$height] ??= $link['file'];
             }
         }
-        $order = $small ? [Preset::Web720, Preset::Mobile540, Preset::Web1080] : self::WEB;
-        usort($mp4, static fn (array $a, array $b) => array_search($a['preset'], $order, true) <=> array_search($b['preset'], $order, true));
+        ksort($mp4);
+        if ($small && count($mp4) > 1) {
+            unset($mp4[1080]);
+        }
+        $largest = array_key_last($mp4);
+        // die WebM-Fassung hat 1080p – für kleine Quellen nur, wenn es keine kleinere MP4-Fassung gibt
+        if ($small && null !== $largest && $largest < 1080) {
+            $webm = null;
+        }
 
         $files = [];
-        if (null !== $webm) {
-            $files[] = $webm;
+        foreach ($mp4 as $height => $name) {
+            if ($height !== $largest) {
+                $files[] = [$name, '(max-width: ' . ($height <= 480 ? 640 : 1280) . 'px)'];
+            }
         }
-        $files[] = $mp4[0]['file'] ?? $file;
+        if (null !== $webm) {
+            $files[] = [$webm, ''];
+        }
+        $files[] = [null !== $largest ? $mp4[$largest] : $file, ''];
 
         $sources = [];
-        foreach ($files as $name) {
-            $media = Media::get($name);
-            if (null !== $media) {
-                $sources[] = ['file' => $media->fileName, 'url' => $media->getUrl(), 'type' => (string) $media->type];
+        foreach ($files as [$name, $media]) {
+            $item = Media::get($name);
+            if (null !== $item) {
+                $sources[] = ['file' => $item->fileName, 'url' => $item->getUrl(), 'type' => (string) $item->type, 'media' => $media];
             }
         }
 
@@ -152,7 +166,8 @@ final class VideoEditor
 
         $html = '<video' . $attributes . '>';
         foreach (self::sources($file, $background) as $source) {
-            $html .= '<source src="' . escape($source['url']) . '" type="' . escape($source['type']) . '">';
+            $html .= '<source src="' . escape($source['url']) . '" type="' . escape($source['type']) . '"'
+                . ('' !== $source['media'] ? ' media="' . escape($source['media']) . '"' : '') . '>';
         }
         if (!$background) {
             $captions = $options['captions'] ?? false;

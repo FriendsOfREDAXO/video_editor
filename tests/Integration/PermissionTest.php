@@ -141,6 +141,36 @@ final class PermissionTest extends TestCase
         self::assertSame([], Jobs::forFile(self::$videoA));
     }
 
+    public function testReplaceNeedsSinglePreset(): void
+    {
+        $data = self::call('replacer', 'optimize', self::$videoA, ['presets' => 'faststart,mute', 'mode' => 'replace']);
+
+        self::assertFalse($data['ok']);
+        self::assertSame(I18n::msg('video_editor_mode_replace_one'), $data['error']);
+        $data = self::call('editor', 'optimize', self::$videoA, ['presets' => 'web720,unbekannt']);
+        self::assertSame(I18n::msg('video_editor_preset_unknown'), $data['error']);
+        self::assertSame([], Jobs::forFile(self::$videoA));
+    }
+
+    /** Die Warteschlange zählt alle offenen Aufträge, nennt aber nur Dateien aus erlaubten Kategorien */
+    public function testQueueHidesForeignFiles(): void
+    {
+        $admin = self::account('admin');
+        Jobs::add(self::$videoA, 'optimize', ['preset' => 'web480', 'mode' => 'version'], $admin);
+        Jobs::add(self::$videoB, 'optimize', ['preset' => 'web480', 'mode' => 'version'], $admin);
+        try {
+            $data = self::call('viewer', 'queue', '');
+
+            self::assertTrue($data['ok']);
+            self::assertArrayHasKey(self::$videoA, $data['files']);
+            self::assertArrayNotHasKey(self::$videoB, $data['files']);
+            self::assertStringContainsString('2', $data['summary']);
+            self::assertArrayHasKey(self::$videoB, self::call('admin', 'queue', '')['files']);
+        } finally {
+            Sql::factory()->setQuery('DELETE FROM ' . Jobs::TABLE . ' WHERE filename IN (?, ?)', [self::$videoA, self::$videoB]);
+        }
+    }
+
     public function testEditorPassesPermissionCheck(): void
     {
         // unbekannter Auftrag: die Rechteprüfung ist bestanden, es scheitert erst an der Auftragsnummer

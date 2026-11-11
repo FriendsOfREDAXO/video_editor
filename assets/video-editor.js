@@ -241,27 +241,39 @@
         const openOptimize = (preselect) => {
             const presets = data.presets;
             const chosen = preselect || presets.find((p) => p.recommended)?.id || presets[0].id;
+            // schon als Fassung vorhanden – lässt sich trotzdem neu erzeugen
+            const existing = new Set((data.versions || []).map((v) => v.preset).filter(Boolean));
             const list = el('fieldset', { class: 've-presets' }, el('legend', { class: 'rex-u-visually-hidden', text: t.optimize_title }),
                 presets.map((p) => el('label', { class: 've-preset' },
-                    el('input', { type: 'radio', name: 've-preset', value: p.id, checked: p.id === chosen }),
+                    el('input', { type: 'checkbox', name: 've-preset', value: p.id, checked: p.id === chosen }),
                     el('span', { class: 've-preset-text' },
                         el('strong', { text: p.label }),
                         p.recommended ? el('span', { class: 've-badge ve-badge--accent', text: t.recommended }) : null,
                         p.fast ? el('span', { class: 've-badge', text: t.fast }) : null,
+                        existing.has(p.id) ? el('span', { class: 've-badge', text: t.optimize_existing }) : null,
                         el('small', { text: p.text + ' · .' + p.extension }),
                     ),
                 )));
             const mode = el('fieldset', { class: 've-mode' }, el('legend', { text: t.mode }),
                 el('label', {}, el('input', { type: 'radio', name: 've-mode', value: 'version', checked: true }), ' ' + t.mode_version),
-                // Original ersetzen nur mit eigenem Recht
+                // Original ersetzen nur mit eigenem Recht und nur mit einer Vorlage
                 data.canReplace ? el('label', {}, el('input', { type: 'radio', name: 've-mode', value: 'replace' }), ' ' + t.mode_replace,
                     el('small', { class: 've-muted', text: ' (' + t.mode_replace_note + ')' })) : null,
             );
+            const note = el('p', { class: 've-muted', hidden: true });
+            const start = el('button', { type: 'button', class: 'rex-button', 'data-variant': 'primary' }, t.start);
+            const cancel = el('button', { type: 'button', class: 'rex-button' }, t.cancel);
+            const checked = () => [...list.querySelectorAll('input:checked')].map((i) => i.value);
             const replaceInput = mode.querySelector('input[value="replace"]');
             const sync = () => {
-                const p = presets.find((x) => x.id === list.querySelector('input:checked')?.value);
+                const ids = checked();
+                start.disabled = ids.length === 0;
+                note.hidden = ids.length < 2;
+                note.textContent = t.optimize_count.replace('{0}', ids.length);
                 if (!replaceInput) return;
+                const p = ids.length === 1 ? presets.find((x) => x.id === ids[0]) : null;
                 replaceInput.disabled = !p?.replace;
+                replaceInput.title = ids.length > 1 ? t.mode_replace_one : '';
                 if (replaceInput.disabled && replaceInput.checked) {
                     mode.querySelector('input[value="version"]').checked = true;
                 }
@@ -269,15 +281,13 @@
             list.addEventListener('change', sync);
             sync();
 
-            const start = el('button', { type: 'button', class: 'rex-button', 'data-variant': 'primary' }, t.start);
-            const cancel = el('button', { type: 'button', class: 'rex-button' }, t.cancel);
-            const d = dialog(t.optimize_title, [list, mode], [cancel, start]);
+            const d = dialog(t.optimize_title, [list, mode, note], [cancel, start]);
             cancel.addEventListener('click', () => d.close());
             start.addEventListener('click', async () => {
                 start.disabled = true;
                 try {
                     const json = await call('optimize', {
-                        preset: list.querySelector('input:checked').value,
+                        presets: checked().join(','),
                         mode: mode.querySelector('input:checked').value,
                     });
                     data.jobs = json.jobs;
@@ -1052,7 +1062,45 @@
         load();
     };
 
-    const scan = (root = document) => root.querySelectorAll?.('section[data-video-editor]').forEach(init);
+    // Medienliste: Warteschlange nachfragen, solange Aufträge offen sind
+    const watchQueue = (box) => {
+        if (box.dataset.veWatching) return;
+        box.dataset.veWatching = '1';
+        let wasOpen = !box.hidden;
+        const tick = async () => {
+            if (!box.isConnected) return;
+            try {
+                const body = new FormData();
+                body.append('action', 'queue');
+                const res = await fetch(box.dataset.veQueue, { method: 'POST', body, credentials: 'same-origin', headers: { Accept: 'application/json' } });
+                const json = await res.json();
+                if (!json.ok) return;
+                const text = box.querySelector('span');
+                if (json.summary) {
+                    text.textContent = json.summary;
+                    box.hidden = false;
+                    wasOpen = true;
+                } else if (wasOpen) {
+                    text.textContent = box.dataset.veDone || '';
+                    box.dataset.veFinished = '1';
+                }
+                document.querySelectorAll('[data-ve-state]').forEach((badge) => {
+                    const state = json.files[badge.dataset.veState] || '';
+                    badge.textContent = state;
+                    badge.hidden = state === '';
+                });
+                if (json.summary || !box.dataset.veFinished) setTimeout(tick, json.summary ? 4000 : 15000);
+            } catch {
+                setTimeout(tick, 15000);
+            }
+        };
+        setTimeout(tick, 4000);
+    };
+
+    const scan = (root = document) => {
+        root.querySelectorAll?.('section[data-video-editor]').forEach(init);
+        root.querySelectorAll?.('[data-ve-queue]').forEach(watchQueue);
+    };
     scan();
     document.addEventListener('DOMContentLoaded', () => scan());
     document.addEventListener('rex:ready', (e) => scan(e.target));

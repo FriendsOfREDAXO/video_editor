@@ -14,6 +14,8 @@ use Redaxo\Core\Filesystem\Url;
 use Redaxo\Core\Http\Request;
 use Redaxo\Core\MediaPool\ExtensionPoint\MediaDeleted;
 use Redaxo\Core\MediaPool\ExtensionPoint\MediaDetailSidebar;
+use Redaxo\Core\MediaPool\ExtensionPoint\MediaListThumbnail;
+use Redaxo\Core\MediaPool\ExtensionPoint\MediaListToolbar;
 use Redaxo\Core\MediaPool\Media;
 use Redaxo\Core\MediaPool\MediaPoolPermission;
 use Redaxo\Core\Security\Permission;
@@ -113,6 +115,27 @@ final class VideoEditorAddon extends Addon
         Asset::addJsFile($this->asset('video-editor.js'), [Asset::JS_DEFERED => true]);
 
         if (str_starts_with(Request::get('page', 'string', ''), 'mediapool')) {
+            // Medienliste: offene Aufträge oben als Hinweis und am Vorschaubild des Videos
+            Extension::register(MediaListToolbar::class, static function (MediaListToolbar $ep): string {
+                $user = Core::getUser();
+                if (null === $user || 'media' !== ($ep->subpage ?? 'media')) {
+                    return (string) $ep->subject;
+                }
+                $queue = Api::queue($user);
+
+                return $ep->subject . '<p class="ve-queue" data-ve-queue="' . escape(Url::backendController(Api::getUrlParams())) . '" data-ve-done="'
+                    . escape(I18n::msg('video_editor_queue_done')) . '"' . ('' === $queue['summary'] ? ' hidden' : '') . '><i class="rex-icon fa-solid fa-film" aria-hidden="true"></i> <span>'
+                    . escape($queue['summary']) . '</span></p>';
+            });
+            Extension::register(MediaListThumbnail::class, static function (MediaListThumbnail $ep): string {
+                if (!self::isVideo($ep->media)) {
+                    return (string) $ep->subject;
+                }
+                $state = self::queueState()[$ep->media->fileName] ?? '';
+
+                return $ep->subject . '<span class="ve-list-state" data-ve-state="' . escape($ep->media->fileName) . '"'
+                    . ('' === $state ? ' hidden' : '') . '>' . escape($state) . '</span>';
+            });
             Extension::register(MediaDetailSidebar::class, static function (MediaDetailSidebar $ep): string {
                 $user = Core::getUser();
 
@@ -122,6 +145,15 @@ final class VideoEditorAddon extends Addon
                     : (string) $ep->subject;
             });
         }
+    }
+
+    /** @return array<string, string> Zustand offener Aufträge je Datei (einmal je Seitenaufruf) */
+    private static function queueState(): array
+    {
+        static $files = null;
+        $user = Core::getUser();
+
+        return $files ??= null !== $user ? Api::queue($user)['files'] : [];
     }
 
     /** Darf der Benutzer Videos bearbeiten? */
@@ -167,7 +199,7 @@ final class VideoEditorAddon extends Addon
     private static function texts(): array
     {
         $keys = ['title', 'loading', 'error', 'no_ffmpeg', 'score', 'optimize', 'optimize_title', 'poster', 'poster_title',
-            'poster_take', 'poster_current', 'preview', 'mode_replace_denied', 'cut', 'cut_title', 'cut_help', 'cut_timeline', 'cut_segment', 'cut_split', 'cut_in', 'cut_out', 'cut_remove', 'cut_undo', 'cut_reset', 'cut_play', 'cut_stop', 'cut_length', 'cut_method', 'cut_fast', 'cut_fast_text', 'cut_exact', 'cut_exact_text', 'cut_keys', 'cut_snap_note', 'cut_snap_none', 'tracks', 'track_add', 'track_edit', 'track_title', 'track_lang', 'track_role', 'track_role_subtitles', 'track_role_captions', 'track_role_chapters', 'track_label', 'track_cues', 'track_new_cue', 'track_from', 'track_to', 'track_text', 'track_set_start', 'track_set_end', 'track_jump', 'track_delete_cue', 'track_shift', 'track_shift_apply', 'track_import', 'track_save', 'track_remove', 'track_remove_confirm', 'track_none', 'track_list', 'track_keys', 'track_time_invalid', 'jobs', 'versions', 'source', 'cancel', 'retry', 'start', 'close', 'mode',
+            'poster_take', 'poster_current', 'preview', 'mode_replace_denied', 'mode_replace_one', 'optimize_existing', 'optimize_count', 'cut', 'cut_title', 'cut_help', 'cut_timeline', 'cut_segment', 'cut_split', 'cut_in', 'cut_out', 'cut_remove', 'cut_undo', 'cut_reset', 'cut_play', 'cut_stop', 'cut_length', 'cut_method', 'cut_fast', 'cut_fast_text', 'cut_exact', 'cut_exact_text', 'cut_keys', 'cut_snap_note', 'cut_snap_none', 'tracks', 'track_add', 'track_edit', 'track_title', 'track_lang', 'track_role', 'track_role_subtitles', 'track_role_captions', 'track_role_chapters', 'track_label', 'track_cues', 'track_new_cue', 'track_from', 'track_to', 'track_text', 'track_set_start', 'track_set_end', 'track_jump', 'track_delete_cue', 'track_shift', 'track_shift_apply', 'track_import', 'track_save', 'track_remove', 'track_remove_confirm', 'track_none', 'track_list', 'track_keys', 'track_time_invalid', 'jobs', 'versions', 'source', 'cancel', 'retry', 'start', 'close', 'mode',
             'mode_version', 'mode_replace', 'mode_replace_note', 'recommended', 'fast', 'status_queued', 'status_running',
             'status_done', 'status_failed', 'status_canceled', 'open', 'apply', 'hints_none', 'duration', 'resolution',
             'bitrate', 'codec', 'faststart_yes', 'faststart_no', 'no_audio'];

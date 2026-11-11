@@ -14,7 +14,7 @@ enum Preset: string
 {
     case Web1080 = 'web1080';
     case Web720 = 'web720';
-    case Mobile540 = 'mobile540';
+    case Web480 = 'web480';
     case Archive = 'archive';
     case Webm = 'webm';
     case Faststart = 'faststart';
@@ -38,6 +38,17 @@ enum Preset: string
             self::Webm => 'webm',
             self::Faststart, self::Mute, self::Loudnorm => null,
             default => 'mp4',
+        };
+    }
+
+    /** Höhe in Pixeln bei den Web-Fassungen (MP4), sonst null */
+    public function height(): ?int
+    {
+        return match ($this) {
+            self::Web1080 => 1080,
+            self::Web720 => 720,
+            self::Web480 => 480,
+            default => null,
         };
     }
 
@@ -75,7 +86,7 @@ enum Preset: string
         return match ($this) {
             self::Web1080 => $h264(1080, 23, 'medium', '128k'),
             self::Web720 => $h264(720, 24, 'medium', '128k'),
-            self::Mobile540 => $h264(540, 26, 'medium', '96k'),
+            self::Web480 => $h264(480, 25, 'medium', '96k'),
             self::Archive => [
                 '-map', '0:v:0', '-map', '0:a:0?',
                 '-vf', 'format=yuv420p',

@@ -713,3 +713,18 @@
 .ve-track-tools input[type="file"] {
     display: none;
 }
+
+/* Medienliste: offene Aufträge */
+.ve-queue {
+    margin: 8px 0;
+    color: var(--rex-color-text-muted);
+    font-size: 13px;
+}
+
+.ve-list-state {
+    display: block;
+    margin-block-start: 4px;
+    color: var(--rex-color-link);
+    font-size: 11px;
+    white-space: nowrap;
+}

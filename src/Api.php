@@ -21,7 +21,13 @@ use Redaxo\Core\Translation\I18n;
 use Redaxo\Core\Util\Formatter;
 use Throwable;
 
+use function array_filter;
 use function array_map;
+use function array_unique;
+use function array_values;
+use function count;
+use function explode;
+use function implode;
 use function in_array;
 use function is_array;
 use function json_decode;
@@ -42,6 +48,7 @@ use function strtolower;
  *  - action=cancel    Auftrag abbrechen (job)
  *  - action=retry     Auftrag erneut versuchen (job)
  *  - action=jobs      nur die Aufträge (zum Nachfragen des Fortschritts)
+ *  - action=queue     Warteschlange für die Medienliste (ohne file)
  */
 #[AsApiFunction('video_editor')]
 final class Api extends ApiFunction
@@ -65,6 +72,9 @@ final class Api extends ApiFunction
     public static function handle(User $user): array
     {
         try {
+            if ('queue' === Request::post('action', 'string', '')) {
+                return ['ok' => true] + self::queue($user);
+            }
             $media = self::media($user);
             $action = Request::post('action', 'string', 'info');
             // nur ansehen ist ohne Bearbeitungsrecht erlaubt
@@ -175,15 +185,27 @@ final class Api extends ApiFunction
         if (!Ffmpeg::available()) {
             throw new UserMessageException(I18n::msg('video_editor_no_ffmpeg'));
         }
-        $preset = Preset::tryFrom(Request::post('preset', 'string', ''));
-        if (null === $preset || !$preset->supports($media->getExtension())) {
+        // mehrere Vorlagen auf einmal: je Vorlage ein Auftrag, sie laufen nacheinander
+        $ids = array_values(array_unique(array_filter(explode(',', Request::post('presets', 'string', Request::post('preset', 'string', ''))))));
+        $presets = array_map(static fn (string $id) => Preset::tryFrom($id), $ids);
+        if ([] === $presets || in_array(null, $presets, true)) {
             throw new UserMessageException(I18n::msg('video_editor_preset_unknown'));
+        }
+        foreach ($presets as $preset) {
+            if (!$preset->supports($media->getExtension())) {
+                throw new UserMessageException(I18n::msg('video_editor_preset_unknown'));
+            }
         }
         $mode = 'replace' === Request::post('mode', 'string', 'version') ? 'replace' : 'version';
         if ('replace' === $mode && !VideoEditorAddon::mayReplace($user)) {
             throw new UserMessageException(I18n::msg('video_editor_mode_replace_denied'));
         }
-        Jobs::add($media->fileName, 'optimize', ['preset' => $preset->value, 'mode' => $mode], $user);
+        if ('replace' === $mode && 1 !== count($presets)) {
+            throw new UserMessageException(I18n::msg('video_editor_mode_replace_one'));
+        }
+        foreach ($presets as $preset) {
+            Jobs::add($media->fileName, 'optimize', ['preset' => $preset->value, 'mode' => $mode], $user);
+        }
         Worker::start();
 
         return ['jobs' => self::jobs($media)];
@@ -280,6 +302,42 @@ final class Api extends ApiFunction
         ], Jobs::forFile($media->fileName));
     }
 
+    /**
+     * Offene Aufträge: Zusammenfassung und Zustand je Datei – Dateien nur aus Kategorien, die der Benutzer sehen darf.
+     *
+     * @return array{summary: string, files: array<string, string>}
+     */
+    public static function queue(User $user): array
+    {
+        $running = null;
+        $waiting = 0;
+        $files = [];
+        foreach (Jobs::pending() as $job) {
+            $state = Jobs::RUNNING === $job['status']
+                ? I18n::msg('video_editor_queue_running', (string) $job['progress'])
+                : I18n::msg('video_editor_queue_waiting');
+            if (Jobs::RUNNING === $job['status']) {
+                $running = $job['progress'];
+            } else {
+                ++$waiting;
+            }
+            $media = Media::get($job['filename']);
+            if (null !== $media && VideoEditorAddon::mayView($user, $media)) {
+                // laufend schlägt wartend
+                $files[$job['filename']] ??= $state;
+            }
+        }
+        $parts = [];
+        if (null !== $running) {
+            $parts[] = I18n::msg('video_editor_queue_summary_running', (string) $running);
+        }
+        if ($waiting > 0) {
+            $parts[] = I18n::msg(1 === $waiting ? 'video_editor_queue_summary_waiting_one' : 'video_editor_queue_summary_waiting', (string) $waiting);
+        }
+
+        return ['summary' => [] !== $parts ? I18n::msg('video_editor_queue', implode(', ', $parts)) : '', 'files' => $files];
+    }
+
     /** @return list<array<string, mixed>> */
     private static function versions(Media $media): array
     {
@@ -288,6 +346,7 @@ final class Api extends ApiFunction
 
             return [
                 'file' => $link['file'],
+                'preset' => $link['preset']?->value,
                 'label' => $link['preset']?->label() ?? $link['label'],
                 'size' => $target ? Formatter::bytes($target->size) : '',
                 'url' => self::detailUrl($link['file']),
