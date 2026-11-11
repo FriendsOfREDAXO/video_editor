@@ -69,6 +69,25 @@ enum Preset: string
     }
 
     /**
+     * Skalierungsfilter für „<höhe>p“: Das Video passt danach in ein Quadrat mit der langen Seite eines 16:9-Bildes
+     * dieser Höhe (1080 → 1920). Querformat wird höchstens 1920 × 1080, Hochformat höchstens 1080 × 1920 – bisher
+     * wurde Hochformat über die Höhe begrenzt und schrumpfte auf 607 × 1080. Kleinere Videos bleiben unverändert
+     * („min(iw, …)“), force_divisible_by=2 hält die Maße gerade (libx264/4:2:0).
+     */
+    public static function scale(int $height): string
+    {
+        $long = self::longSide($height);
+
+        return "scale='min(iw," . $long . ")':'min(ih," . $long . ")':force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos";
+    }
+
+    /** Lange Seite eines 16:9-Bildes mit dieser Höhe, gerade (1080 → 1920, 480 → 854) */
+    public static function longSide(int $height): int
+    {
+        return (int) (2 * round($height * 16 / 9 / 2));
+    }
+
+    /**
      * Argumente zwischen Eingabe und Ausgabe.
      *
      * @return list<string>
@@ -77,7 +96,7 @@ enum Preset: string
     {
         $h264 = static fn (int $height, int $crf, string $speed, string $audio) => [
             '-map', '0:v:0', '-map', '0:a:0?',
-            '-vf', "scale=-2:'min(" . $height . ",ih)':flags=lanczos,format=yuv420p",
+            '-vf', self::scale($height) . ',format=yuv420p',
             '-c:v', 'libx264', '-preset', $speed, '-crf', (string) $crf, '-profile:v', 'high',
             '-c:a', 'aac', '-b:a', $audio, '-ac', '2',
             '-movflags', '+faststart',
@@ -96,7 +115,7 @@ enum Preset: string
             ],
             self::Webm => [
                 '-map', '0:v:0', '-map', '0:a:0?',
-                '-vf', "scale=-2:'min(1080,ih)':flags=lanczos,format=yuv420p",
+                '-vf', self::scale(1080) . ',format=yuv420p',
                 '-c:v', 'libvpx-vp9', '-crf', '33', '-b:v', '0', '-row-mt', '1', '-deadline', 'good', '-cpu-used', '2',
                 '-c:a', 'libopus', '-b:a', '96k',
             ],

@@ -103,13 +103,16 @@ final readonly class Analysis
             // H.265 spielen nicht alle Browser ab
             $hint('hevc', Preset::Web1080, 25);
         }
-        if ($this->height > 1080) {
+        // Hochformat (Smartphone): die lange bzw. kurze Seite zählt, nicht die Höhe – sonst gilt 1080 × 1920 als zu groß
+        $long = max($this->width, $this->height);
+        $short = min($this->width, $this->height);
+        if ($long > Preset::longSide(1080)) {
             $hint('resolution', Preset::Web1080, 20);
         }
         $pixels = max(1, $this->width * $this->height);
         $bitsPerPixel = $this->fps > 0 ? $this->bitrate / ($pixels * $this->fps) : 0;
-        if ($bitsPerPixel > 0.2 || ($this->height <= 1080 && $this->bitrate > 8_000_000)) {
-            $hint('bitrate', $this->height > 720 ? Preset::Web1080 : Preset::Web720, 20);
+        if ($bitsPerPixel > 0.2 || ($short <= 1080 && $this->bitrate > 8_000_000)) {
+            $hint('bitrate', $short > 720 ? Preset::Web1080 : Preset::Web720, 20);
         }
         if (false === $this->faststart) {
             $hint('faststart', Preset::Faststart, 15);
