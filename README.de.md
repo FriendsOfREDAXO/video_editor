@@ -143,6 +143,14 @@ php bin/console video:work --seconds=60
 ```
 
 Der Cronjob `video_editor_work` (jede Minute) holt nach, was liegen geblieben ist – nützlich, wenn `exec` gesperrt ist.
+Cronjobs von REDAXO 6 laufen nur, wenn der System-Cron sie jede Minute anstößt:
+
+```bash
+# crontab -e (Pfad zu PHP und zum Projekt anpassen)
+* * * * * /usr/bin/php /pfad/zum/projekt/bin/console cronjob:run > /dev/null 2>&1
+```
+
+`php bin/console cronjob:run video_editor_work` führt ihn sofort aus, unabhängig vom Zeitplan.
 
 Offene Aufträge zeigt auch die Medienliste: oben ein Hinweis („ein Auftrag läuft (71 %), 2 warten“), am Video sein
 Stand – beides aktualisiert sich, bis alles erledigt ist.

@@ -140,6 +140,14 @@ php bin/console video:work --seconds=60
 ```
 
 The cronjob `video_editor_work` (every minute) catches up on anything left over – useful when `exec` is disabled.
+REDAXO 6 cronjobs only run when the system cron triggers them every minute:
+
+```bash
+# crontab -e (adjust the paths to PHP and the project)
+* * * * * /usr/bin/php /path/to/project/bin/console cronjob:run > /dev/null 2>&1
+```
+
+`php bin/console cronjob:run video_editor_work` runs it right away, regardless of its schedule.
 
 The media list shows open jobs too: a notice at the top (“one job running (71 %), 2 waiting”) and the state at the video –
 both update until everything is done.
