@@ -118,7 +118,13 @@ final class PermissionTest extends TestCase
 
     public function testViewerMayNotEdit(): void
     {
-        foreach (['optimize' => ['preset' => 'faststart'], 'poster' => ['time' => '0.5'], 'cancel' => ['job' => '1'], 'retry' => ['job' => '1']] as $action => $params) {
+        $actions = [
+            'optimize' => ['preset' => 'faststart'], 'poster' => ['time' => '0.5'], 'cancel' => ['job' => '1'], 'retry' => ['job' => '1'],
+            'cut' => ['segments' => '[[0,0.5]]'], 'frames' => [],
+            'track_save' => ['lang' => 'de', 'cues' => '[{"start":0,"end":500,"text":"x"}]'], 'track_delete' => ['track' => 'x.vtt'],
+            'track_parse' => ['content' => "WEBVTT\n\n00:00.000 --> 00:01.000\nx"],
+        ];
+        foreach ($actions as $action => $params) {
             $data = self::call('viewer', $action, self::$videoA, $params);
             self::assertFalse($data['ok'], $action);
             self::assertSame(I18n::msg('video_editor_no_permission'), $data['error'], $action);

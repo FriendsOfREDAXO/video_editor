@@ -542,3 +542,174 @@
 .ve-dialog .ve-mode small {
     font-weight: 400;
 }
+
+/* Untertitel im Panel */
+.ve-tracks {
+    margin-block: 12px;
+
+    h4 {
+        margin: 0 0 6px;
+        font-size: 0.75rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--rex-color-text-muted);
+    }
+
+    p {
+        margin: 0 0 8px;
+    }
+}
+
+.ve-track-list {
+    display: grid;
+    gap: 4px;
+    margin: 0 0 8px;
+    padding: 0;
+    list-style: none;
+
+    li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+    }
+}
+
+/* Untertitel-Editor */
+.ve-track-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+
+    @media (width < 860px) {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.ve-track-main {
+    display: grid;
+    gap: 10px;
+}
+
+.ve-track-video {
+    display: block;
+    inline-size: 100%;
+    max-block-size: 42vh;
+    background: #000;
+    border-radius: var(--rex-radius);
+}
+
+.ve-track-meta {
+    display: grid;
+    grid-template-columns: 8em minmax(0, 1fr);
+    gap: 8px 12px;
+
+    label {
+        display: grid;
+        gap: 4px;
+        margin: 0;
+        font-weight: 400;
+
+        span {
+            font-size: 0.875em;
+            color: var(--rex-color-text-muted);
+        }
+    }
+
+    label:last-child {
+        grid-column: 1 / -1;
+    }
+}
+
+.ve-track-side {
+    display: grid;
+    gap: 8px;
+    min-inline-size: 0;
+}
+
+.ve-track-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 6px 8px;
+}
+
+.ve-track-shift {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    font-weight: 400;
+    font-size: 0.875em;
+
+    input {
+        inline-size: 6em;
+    }
+}
+
+.ve-track-count {
+    margin: 0;
+}
+
+.ve-cue-list {
+    display: grid;
+    gap: 6px;
+    max-block-size: 46vh;
+    margin: 0;
+    padding: 0 4px 0 0;
+    overflow: auto;
+    list-style: none;
+}
+
+.ve-cue {
+    display: grid;
+    gap: 4px;
+    padding: 6px 8px;
+    border: 1px solid var(--rex-color-border);
+    border-radius: var(--rex-radius);
+
+    &.is-active {
+        border-color: var(--rex-color-accent);
+        background: var(--rex-color-accent-subtle);
+    }
+}
+
+.ve-cue-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+
+    .rex-button {
+        padding-inline: 6px;
+    }
+}
+
+.ve-cue-no {
+    min-inline-size: 1.6em;
+    font-variant-numeric: tabular-nums;
+    color: var(--rex-color-text-muted);
+}
+
+.ve-cue-time {
+    inline-size: 7.5em;
+    font-variant-numeric: tabular-nums;
+
+    &:invalid {
+        border-color: var(--rex-color-danger, #c00);
+    }
+}
+
+.ve-cue-text {
+    inline-size: 100%;
+    resize: vertical;
+}
+
+.ve-dialog .rex-dialog-footer .ve-track-remove {
+    margin-inline-end: auto;
+}
+
+.ve-track-tools input[type="file"] {
+    display: none;
+}

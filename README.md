@@ -2,8 +2,8 @@
 
 # Video Editor for REDAXO 6
 
-Edit videos right in the media pool: **analyse**, **optimize for the web**, **trim** and pick a **poster** – with ffmpeg,
-as jobs in the background. The counterpart to the [Image Editor](https://github.com/FriendsOfREDAXO/image_editor).
+Edit videos right in the media pool: **analyse**, **optimize for the web**, **trim**, pick a **poster** and write
+**subtitles** – with ffmpeg, as jobs in the background. The counterpart to the [Image Editor](https://github.com/FriendsOfREDAXO/image_editor).
 
 ![Video panel in the media detail view: preview, rating, jobs and versions](https://raw.githubusercontent.com/FriendsOfREDAXO/video_editor/assets/ve-panel-page.png)
 
@@ -13,12 +13,13 @@ as jobs in the background. The counterpart to the [Image Editor](https://github.
   loudness
 - **Trim** – timeline with thumbnails, split, remove sections, drag edges; fast without re-encoding or frame-accurate
 - **Poster** – pick a still frame down to the exact frame
+- **Subtitles and chapters** – editor with live preview, import of VTT and SRT, trimmed along automatically
 - **Result** as a new, linked version or in place of the original – where it is used stays intact
 - **Background jobs** with progress, cancel and retry; only one at a time
 - **Permissions** in three levels: view, edit, replace the original
 
 > This rewrite for REDAXO 6 takes ideas from the [ffmpeg](https://github.com/FriendsOfREDAXO/ffmpeg) addon for
-> REDAXO 5. Subtitles (WebVTT) will follow in one of the next versions. The screenshots show the German backend.
+> REDAXO 5. The screenshots show the German backend.
 
 ## Installation
 
@@ -94,6 +95,9 @@ Two ways to cut:
 
 ![Fast cut: keyframes and lead-in marked in yellow](https://raw.githubusercontent.com/FriendsOfREDAXO/video_editor/assets/ve-cut-fast.png)
 
+Subtitles are trimmed along: entries in removed parts are dropped, partly removed ones shortened, everything after moves
+forward. A new version gets its own subtitle files; if the cut replaces the original, its files are adjusted.
+
 ## Poster
 
 ![Pick a poster: video with one-second and one-frame steps](https://raw.githubusercontent.com/FriendsOfREDAXO/video_editor/assets/ve-poster.png)
@@ -101,6 +105,24 @@ Two ways to cut:
 Find the spot, hit it exactly with “±1 frame”, take it: the still lands as a JPEG in the media pool, in the same category,
 linked to the video. A new poster replaces the file of the previous one – wherever it is used, the new one shows up
 right away.
+
+## Subtitles and chapters
+
+![Subtitle editor: video with live preview, entries with times and text](https://raw.githubusercontent.com/FriendsOfREDAXO/video_editor/assets/ve-subtitles.png)
+
+Any number of tracks per video – subtitles, captions for the deaf and hard of hearing (with sounds) and chapters, per
+language. The editor shows every change in the video right away:
+
+- **Entry at playhead** (key N) – starts at the current position, ends after two seconds or before the next one
+- set start and end to the playhead with a button, or type times as `1:05.250` or `65.25`
+- the current entry is highlighted, ▶ plays from its start
+- **Shift all** by a few seconds – e.g. when a file doesn't match the cut
+- **Load file** – WebVTT or SubRip (SRT), also in UTF-16 or Windows-1252
+
+Tracks are saved as WebVTT in the media pool (`video-de.vtt`, `video-en-cc.vtt`, `video-de-chapters.vtt`), linked to the
+video. Saving and loading sanitizes: only allowed WebVTT tags (`<b>`, `<i>`, `<u>`, `<v speaker>`, `<lang>`, `<c>`,
+`<ruby>`), no STYLE/REGION blocks, no HTML. For the website the video editor delivers tracks as `text/vtt` – many web
+servers don't know the extension and send `text/plain`, which browsers reject.
 
 ## Jobs
 
@@ -120,7 +142,7 @@ The cronjob `video_editor_work` (every minute) catches up on anything left over 
 | Who | May |
 | --- | --- |
 | anyone with access to the media category | view preview, analysis, jobs and versions |
-| `video_editor[]` | optimize (as a new version), trim, pick a poster, cancel and retry jobs |
+| `video_editor[]` | optimize (as a new version), trim, pick a poster, edit subtitles, cancel and retry jobs |
 | additionally `video_editor[replace]` (options) | replace the original with the result |
 | admins | everything |
 
@@ -129,16 +151,27 @@ Checks happen on the server; the interface only hides what isn't allowed.
 
 ## For developers
 
-Poster and web versions of a video for your own templates and modules:
+A complete `<video>` with poster, web versions and subtitles:
 
 ```php
 use FriendsOfRedaxo\VideoEditor\VideoEditor;
 
+echo VideoEditor::html('film.mov', ['label' => 'Our film', 'captions' => true]);  // subtitles in the page language on
+echo VideoEditor::html('loop.mp4', ['background' => true]);                       // muted, looping, no controls
+```
+
+Options: `background`, `captions` (`true` or a language code), `poster` (another file name or `false`), `preload`
+(`metadata`, `none`, `auto`), `label`, `class`.
+
+The building blocks:
+
+```php
 $poster = VideoEditor::poster('film.mov');          // Media|null – most recently picked poster
 foreach (VideoEditor::sources('film.mov') as $s) {  // best source first: WebM, MP4 web version, else the original
     echo '<source src="' . $s['url'] . '" type="' . $s['type'] . '">';
 }
 VideoEditor::sources('film.mov', small: true);      // 720p before 1080p, e.g. for background videos
+VideoEditor::tracks('film.mov');                    // subtitles/chapters: file, url (text/vtt), lang, kind, label
 VideoEditor::editUrl('film.mov');                   // edit in the media pool – null without permission
 ```
 
@@ -148,7 +181,8 @@ To use the video editor only when it is installed, check
 ### fluid
 
 [fluid](https://github.com/FriendsOfREDAXO/fluid) doesn't need the video editor but uses it when present: the “Video”
-block shows the poster picked here when no preview image is set and delivers the web versions, the hero background video
+block shows the poster picked here when no preview image is set, delivers the web versions and takes over the subtitles
+(including the “text of the video” transcript) when none are set in the block; the hero background video
 takes the smaller version, and the media field gets a “Edit video” button for videos.
 
 ## Technology
@@ -161,7 +195,8 @@ takes the smaller version, and the media field gets a “Edit video” button fo
 
 ## Tests
 
-The integration tests check the permissions (view, edit, replace, foreign category). They need a REDAXO installation with
+The unit tests cover reading, sanitizing and remapping subtitles. The integration tests check the permissions (view,
+edit, replace, foreign category). They need a REDAXO installation with
 a database and ffmpeg, create their own test data (everything named “ve-test”, short videos generated by ffmpeg) and clean
 up afterwards:
 

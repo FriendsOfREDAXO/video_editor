@@ -84,6 +84,13 @@
             } else {
                 preview.removeAttribute('poster');
             }
+            // Untertitel in der Vorschau (zum Einschalten im Player)
+            const trackKey = data.tracks.map((tr) => tr.url).join('|');
+            if (preview.dataset.tracks !== trackKey) {
+                preview.dataset.tracks = trackKey;
+                preview.querySelectorAll('track').forEach((n) => n.remove());
+                data.tracks.filter((tr) => tr.url).forEach((tr) => preview.append(el('track', { kind: tr.role, src: tr.url, srclang: tr.lang, label: tr.name })));
+            }
             const parts = [el('h3', { class: 've-title' }, icon('fa-solid fa-film'), ' ' + t.title), preview];
 
             if (!data.available) {
@@ -123,6 +130,18 @@
                 parts.push(el('a', { class: 've-poster', href: data.poster.url },
                     el('img', { src: data.poster.thumb, alt: '' }), el('span', { text: t.poster_current })));
             }
+            // Untertitel und Kapitel
+            parts.push(el('div', { class: 've-tracks' },
+                el('h4', { text: t.tracks }),
+                data.tracks.length
+                    ? el('ul', { class: 've-track-list' }, data.tracks.map((tr) => el('li', {},
+                        el('span', {}, el('strong', { text: tr.name }),
+                            el('span', { class: 've-muted', text: ' · ' + (t['track_role_' + tr.role] || tr.role) + ' · ' + fill(t.track_cues, tr.cues) })),
+                        data.canEdit ? el('button', { type: 'button', class: 'rex-button', 'data-size': 'xs', 'data-ve-track': tr.file }, t.track_edit) : null,
+                    )))
+                    : el('p', { class: 've-muted', text: t.track_none }),
+                data.canEdit ? el('button', { type: 'button', class: 'rex-button', 'data-size': 'sm', 'data-ve-track': '' }, icon('fa-regular fa-closed-captioning'), ' ' + t.track_add) : null,
+            ));
             parts.push(el('div', { class: 've-jobs' }));
             parts.push(el('div', { class: 've-versions' }));
             section.replaceChildren(...parts);
@@ -724,12 +743,292 @@
             }).catch(() => {});
         };
 
+        // ------------------------------------------------------------------------------------------ Untertitel
+
+        // Zeit in ms ↔ Text „1:05.250“; liest auch „65.25“, „00:01:05,250“
+        const stamp = (ms) => {
+            ms = Math.max(0, Math.round(ms));
+            return time(Math.floor(ms / 1000)) + '.' + String(ms % 1000).padStart(3, '0');
+        };
+        const readStamp = (text) => {
+            const m = String(text).trim().replace(',', '.').match(/^(?:(\d+):)?(?:(\d+):)?(\d+(?:\.\d*)?)$/);
+            if (!m) return null;
+            const parts = [m[1], m[2]].filter((x) => x !== undefined).map(Number);
+            const sec = Number(m[3]);
+            const [h, min] = parts.length === 2 ? parts : [0, parts[0] || 0];
+            return Math.round(((h * 60 + min) * 60 + sec) * 1000);
+        };
+
+        const openTrack = async (file) => {
+            const existing = data.tracks.find((tr) => tr.file === file) || null;
+            let cues = [];
+            if (existing) {
+                try {
+                    cues = (await call('track', { track: existing.file })).cues;
+                } catch (e) {
+                    section.prepend(alertBox('danger', e.message));
+                    return;
+                }
+            }
+            const duration = (data.analysis?.duration || 0) * 1000;
+            const frame = 1 / (data.analysis?.fps || 25);
+
+            const video = el('video', { class: 've-track-video', src: data.stream || data.url, preload: 'auto', playsinline: true, controls: true });
+            const textTrack = video.addTextTrack('subtitles', t.track_title, existing?.lang || data.lang || 'de');
+            textTrack.mode = 'showing';
+            const preview = () => {
+                for (const c of [...(textTrack.cues || [])]) textTrack.removeCue(c);
+                for (const c of cues) {
+                    if (c.end > c.start && c.text.trim()) textTrack.addCue(new VTTCue(c.start / 1000, c.end / 1000, c.text));
+                }
+            };
+
+            const now = el('output', { class: 've-cut-now', text: stamp(0) });
+            const btn = (label, iconName, attrs = {}) => el('button', { type: 'button', class: 'rex-button', 'data-size': 'sm', ...attrs },
+                iconName ? icon(iconName) : null, iconName && label ? ' ' + label : label);
+            const controls = el('div', { class: 've-cut-group' },
+                btn('−1 s', null, { 'data-step': '-1' }), btn('−1 Bild', null, { 'data-step': String(-frame) }), now,
+                btn('+1 Bild', null, { 'data-step': String(frame) }), btn('+1 s', null, { 'data-step': '1' }),
+                btn(t.track_new_cue, 'fa-solid fa-plus', { 'data-cue-new': '', 'aria-keyshortcuts': 'N' }),
+            );
+
+            const id = 've-track-' + Math.random().toString(36).slice(2, 8);
+            const langInput = el('input', { class: 'rex-input', id: id + '-lang', value: existing?.lang || data.lang || 'de', maxlength: '20', size: '8', autocomplete: 'off', spellcheck: 'false' });
+            const roleSelect = el('select', { class: 'rex-input', id: id + '-role' },
+                ['subtitles', 'captions', 'chapters'].map((r) => el('option', { value: r, selected: (existing?.role || 'subtitles') === r }, t['track_role_' + r])));
+            const labelInput = el('input', { class: 'rex-input', id: id + '-label', value: existing?.label || '', maxlength: '60', autocomplete: 'off' });
+            const meta = el('div', { class: 've-track-meta' },
+                el('label', { for: id + '-lang' }, el('span', { text: t.track_lang }), langInput),
+                el('label', { for: id + '-role' }, el('span', { text: t.track_role }), roleSelect),
+                el('label', { for: id + '-label' }, el('span', { text: t.track_label }), labelInput),
+            );
+
+            const fileInput = el('input', { type: 'file', accept: '.vtt,.srt,text/vtt', hidden: true });
+            const shiftInput = el('input', { class: 'rex-input', type: 'number', step: '0.1', value: '0', id: id + '-shift', size: '6' });
+            const tools = el('div', { class: 've-track-tools' },
+                btn(t.track_import, 'fa-solid fa-file-import', { 'data-cue-import': '' }), fileInput,
+                el('label', { for: id + '-shift', class: 've-track-shift' }, el('span', { text: t.track_shift }), shiftInput),
+                btn(t.track_shift_apply, null, { 'data-cue-shift': '' }),
+            );
+
+            const list = el('ol', { class: 've-cue-list', 'aria-label': t.track_list });
+            const count = el('p', { class: 've-muted ve-track-count', 'aria-live': 'polite' });
+
+            const row = (c, i) => {
+                const startIn = el('input', { class: 'rex-input ve-cue-time', value: stamp(c.start), 'aria-label': t.track_from + ' (' + (i + 1) + ')', 'data-cue-field': 'start', spellcheck: 'false' });
+                const endIn = el('input', { class: 'rex-input ve-cue-time', value: stamp(c.end), 'aria-label': t.track_to + ' (' + (i + 1) + ')', 'data-cue-field': 'end', spellcheck: 'false' });
+                const text = el('textarea', { class: 'rex-input ve-cue-text', rows: '2', 'aria-label': t.track_text + ' (' + (i + 1) + ')', 'data-cue-field': 'text' });
+                text.value = c.text;
+                return el('li', { class: 've-cue', 'data-cue': String(i) },
+                    el('div', { class: 've-cue-head' },
+                        el('span', { class: 've-cue-no', text: String(i + 1) }),
+                        startIn,
+                        btn('', 'fa-solid fa-arrow-right-to-bracket', { 'data-cue-set': 'start', title: t.track_set_start, 'aria-label': t.track_set_start }),
+                        el('span', { 'aria-hidden': 'true', text: '–' }),
+                        endIn,
+                        btn('', 'fa-solid fa-arrow-right-from-bracket', { 'data-cue-set': 'end', title: t.track_set_end, 'aria-label': t.track_set_end }),
+                        btn('', 'fa-solid fa-play', { 'data-cue-jump': '', title: t.track_jump, 'aria-label': t.track_jump }),
+                        btn('', 'fa-solid fa-trash-can', { 'data-cue-delete': '', title: t.track_delete_cue, 'aria-label': t.track_delete_cue }),
+                    ),
+                    text,
+                );
+            };
+            const renderList = (focusIndex = null) => {
+                cues.sort((a, b) => a.start - b.start || a.end - b.end);
+                list.replaceChildren(...cues.map(row));
+                count.textContent = fill(t.track_cues, cues.length);
+                preview();
+                highlight();
+                if (focusIndex !== null) {
+                    const li = list.querySelector('[data-cue="' + focusIndex + '"]');
+                    li?.querySelector('textarea')?.focus();
+                    li?.scrollIntoView({ block: 'nearest' });
+                }
+            };
+            const highlight = () => {
+                const cur = video.currentTime * 1000;
+                now.textContent = stamp(cur);
+                list.querySelectorAll('.ve-cue').forEach((li) => {
+                    const c = cues[Number(li.dataset.cue)];
+                    const on = c && cur >= c.start && cur < c.end;
+                    if (on !== li.classList.contains('is-active')) {
+                        li.classList.toggle('is-active', on);
+                        if (on && !video.paused && !list.contains(document.activeElement)) li.scrollIntoView({ block: 'nearest' });
+                    }
+                });
+            };
+            video.addEventListener('timeupdate', highlight);
+            video.addEventListener('seeked', highlight);
+
+            const newCue = () => {
+                const cur = Math.round(video.currentTime * 1000);
+                const next = cues.filter((c) => c.start > cur).sort((a, b) => a.start - b.start)[0];
+                const end = Math.min(cur + 2000, next ? next.start : Infinity, duration || Infinity);
+                cues.push({ start: cur, end: end > cur ? end : cur + 2000, text: '', settings: '' });
+                cues.sort((a, b) => a.start - b.start);
+                video.pause();
+                renderList(cues.findIndex((c) => c.start === cur && c.text === ''));
+            };
+
+            // Eingaben übernehmen – ohne neu zu sortieren, damit der Fokus bleibt
+            list.addEventListener('input', (e) => {
+                const li = e.target.closest('[data-cue]');
+                const c = li && cues[Number(li.dataset.cue)];
+                if (!c) return;
+                const field = e.target.dataset.cueField;
+                if (field === 'text') {
+                    c.text = e.target.value;
+                } else {
+                    const ms = readStamp(e.target.value);
+                    e.target.setCustomValidity(ms === null ? t.track_time_invalid : '');
+                    if (ms !== null) c[field] = ms;
+                }
+                preview();
+            });
+            list.addEventListener('change', (e) => {
+                if (e.target.dataset.cueField === 'start' || e.target.dataset.cueField === 'end') {
+                    const li = e.target.closest('[data-cue]');
+                    const c = cues[Number(li.dataset.cue)];
+                    if (c) e.target.value = stamp(c[e.target.dataset.cueField]);
+                }
+            });
+            list.addEventListener('click', (e) => {
+                const b = e.target.closest('button');
+                const li = e.target.closest('[data-cue]');
+                if (!b || !li) return;
+                const i = Number(li.dataset.cue);
+                const c = cues[i];
+                if (b.hasAttribute('data-cue-delete')) {
+                    cues.splice(i, 1);
+                    renderList();
+                } else if (b.hasAttribute('data-cue-jump')) {
+                    video.currentTime = c.start / 1000;
+                    video.play();
+                } else if (b.dataset.cueSet) {
+                    c[b.dataset.cueSet] = Math.round(video.currentTime * 1000);
+                    if (c.end <= c.start) c.end = c.start + 1000;
+                    li.querySelector('[data-cue-field="start"]').value = stamp(c.start);
+                    li.querySelector('[data-cue-field="end"]').value = stamp(c.end);
+                    preview();
+                }
+            });
+            controls.addEventListener('click', (e) => {
+                const b = e.target.closest('button');
+                if (!b) return;
+                if (b.dataset.step) {
+                    video.pause();
+                    video.currentTime = Math.max(0, video.currentTime + Number(b.dataset.step));
+                } else if (b.hasAttribute('data-cue-new')) {
+                    newCue();
+                }
+            });
+            tools.addEventListener('click', async (e) => {
+                const b = e.target.closest('button');
+                if (!b) return;
+                if (b.hasAttribute('data-cue-import')) {
+                    fileInput.click();
+                } else if (b.hasAttribute('data-cue-shift')) {
+                    const delta = Math.round(Number(shiftInput.value || 0) * 1000);
+                    if (!delta) return;
+                    for (const c of cues) {
+                        c.start = Math.max(0, c.start + delta);
+                        c.end = Math.max(c.start + 100, c.end + delta);
+                    }
+                    shiftInput.value = '0';
+                    renderList();
+                }
+            });
+            fileInput.addEventListener('change', async () => {
+                const f = fileInput.files?.[0];
+                if (!f) return;
+                try {
+                    const json = await call('track_parse', { content: await f.text() });
+                    cues = json.cues;
+                    renderList();
+                } catch (err) {
+                    d.querySelector('.rex-dialog-body').prepend(alertBox('danger', err.message));
+                }
+                fileInput.value = '';
+            });
+
+            const save = el('button', { type: 'button', class: 'rex-button', 'data-variant': 'primary' }, icon('fa-solid fa-check'), ' ' + t.track_save);
+            const cancel = el('button', { type: 'button', class: 'rex-button' }, t.cancel);
+            const remove = existing ? el('button', { type: 'button', class: 'rex-button ve-track-remove', 'data-variant': 'danger' }, icon('fa-solid fa-trash-can'), ' ' + t.track_remove) : null;
+            const d = dialog(existing ? t.track_title + ': ' + existing.name : t.track_add.replace(/\s*…$/, ''), [
+                el('div', { class: 've-track-layout' },
+                    el('div', { class: 've-track-main' }, video, controls, meta),
+                    el('div', { class: 've-track-side' }, tools, count, list),
+                ),
+                el('p', { class: 've-muted ve-cut-help', text: t.track_keys }),
+            ], [remove, cancel, save], true);
+
+            d.addEventListener('keydown', (e) => {
+                if (e.target.closest('input, textarea, select') || e.metaKey || e.ctrlKey || e.altKey) return;
+                const key = e.key.toLowerCase();
+                if (key === 'n') {
+                    e.preventDefault();
+                    newCue();
+                } else if (key === ' ' && !e.target.closest('button')) {
+                    e.preventDefault();
+                    video.paused ? video.play() : video.pause();
+                } else if ((key === 'arrowleft' || key === 'arrowright') && !e.target.closest('button')) {
+                    e.preventDefault();
+                    video.pause();
+                    video.currentTime = Math.max(0, video.currentTime + (key === 'arrowleft' ? -1 : 1) * (e.shiftKey ? 1 : frame));
+                }
+            });
+            d.addEventListener('close', () => video.pause());
+            cancel.addEventListener('click', () => d.close());
+            remove?.addEventListener('click', async () => {
+                // zweiter Klick bestätigt
+                if (!remove.dataset.confirm) {
+                    remove.dataset.confirm = '1';
+                    remove.replaceChildren(icon('fa-solid fa-trash-can'), ' ' + t.track_remove_confirm);
+                    return;
+                }
+                try {
+                    data.tracks = (await call('track_delete', { track: existing.file })).tracks;
+                    d.close();
+                    render();
+                } catch (err) {
+                    d.querySelector('.rex-dialog-body').prepend(alertBox('danger', err.message));
+                }
+            });
+            save.addEventListener('click', async () => {
+                save.disabled = true;
+                try {
+                    const json = await call('track_save', {
+                        track: existing?.file || '',
+                        lang: langInput.value,
+                        role: roleSelect.value,
+                        label: labelInput.value,
+                        cues: JSON.stringify(cues),
+                    });
+                    data.tracks = json.tracks;
+                    d.close();
+                    render();
+                } catch (err) {
+                    save.disabled = false;
+                    d.querySelector('.rex-dialog-body').querySelector(':scope > .rex-alert')?.remove();
+                    d.querySelector('.rex-dialog-body').prepend(alertBox('danger', err.message));
+                }
+            });
+
+            renderList();
+            if (!cues.length) newCue();
+        };
+
         // ------------------------------------------------------------------------------------------ Ereignisse
 
         section.addEventListener('click', async (e) => {
             const open = e.target.closest('[data-ve-open]');
             if (open) {
                 ({ poster: openPoster, cut: openCut, optimize: openOptimize })[open.dataset.veOpen]?.();
+                return;
+            }
+            const trackBtn = e.target.closest('[data-ve-track]');
+            if (trackBtn) {
+                openTrack(trackBtn.dataset.veTrack || null);
                 return;
             }
             const preset = e.target.closest('[data-ve-preset]');

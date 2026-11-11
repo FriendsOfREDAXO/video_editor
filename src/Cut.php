@@ -205,8 +205,8 @@ final class Cut
             ]];
         }
 
-        // schnell: jeden Abschnitt ohne Neukodierung herauskopieren (ab dem Schlüsselbild), dann verlustfrei aneinanderhängen
-        $segments = self::snap($segments, self::keyframes($input));
+        // schnell: jeden Abschnitt ohne Neukodierung herauskopieren, dann verlustfrei aneinanderhängen – die Abschnitte
+        // beginnen bereits am Schlüsselbild ({@see snap()}, im Worker)
         $copy = static fn (float $start, float $end, string $target): array => [
             'args' => [...$head, '-ss', sprintf('%.3F', $start), '-i', $input, '-t', sprintf('%.3F', $end - $start),
                 '-map', '0:v:0', '-map', '0:a:0?', '-c', 'copy', '-avoid_negative_ts', 'make_zero', ...$mp4, '-progress', 'pipe:1', '-nostats', $target],

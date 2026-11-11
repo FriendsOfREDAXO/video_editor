@@ -172,6 +172,15 @@ final class Worker
                 return;
             }
             $stored = self::store($media, $plan['output'], (string) ($job['params']['mode'] ?? 'version'), $plan['label'], $plan['preset']);
+            if (null !== $plan['segments']) {
+                // Untertitel mitschneiden
+                Tracks::afterCut($media, $stored, $plan['segments']);
+            } elseif ($stored !== $media->fileName) {
+                // neue Fassung (gleiche Länge): Spuren gelten auch für sie
+                foreach (Links::of($media->fileName, Links::TRACK) as $link) {
+                    Links::add($stored, $link['file'], Links::TRACK, $link['label'], null, $link['lang'], $link['role']);
+                }
+            }
             Jobs::finish($id, Jobs::DONE, result: $stored, log: $log);
         } catch (Throwable $e) {
             Jobs::finish($id, Jobs::FAILED, message: $e->getMessage());
@@ -184,7 +193,7 @@ final class Worker
      * Was ist zu tun? Schritte für ffmpeg, Zieldatei (ihr Name wird zum Namen im Medienpool) und Bezeichnung.
      *
      * @param array<string, mixed> $job
-     * @return array{steps: list<array{args: list<string>, duration: float}>, output: string, label: string, preset: ?Preset}|null
+     * @return array{steps: list<array{args: list<string>, duration: float}>, output: string, label: string, preset: ?Preset, segments: list<array{float, float}>|null}|null
      */
     private static function plan(array $job, Media $media, string $ffmpeg, string $tmpDir): ?array
     {
@@ -201,6 +210,9 @@ final class Worker
                 return null;
             }
             $exact = (bool) ($params['exact'] ?? false);
+            if (!$exact) {
+                $segments = Cut::snap($segments, Cut::keyframes($input));
+            }
             $audio = false;
             foreach ($probe['streams'] ?? [] as $stream) {
                 $audio = $audio || 'audio' === ($stream['codec_type'] ?? null);
@@ -213,6 +225,7 @@ final class Worker
                 // Bezeichnung aus der Anfrage (Sprache des Benutzers), der Worker läuft auf der Konsole
                 'label' => (string) ($params['label'] ?? Cut::label($segments)),
                 'preset' => null,
+                'segments' => $segments,
             ];
         }
 
@@ -230,6 +243,7 @@ final class Worker
             'output' => $output,
             'label' => $preset->label(),
             'preset' => $preset,
+            'segments' => null,
         ];
     }
 

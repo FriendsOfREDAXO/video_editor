@@ -4,20 +4,28 @@ namespace FriendsOfRedaxo\VideoEditor;
 
 use Redaxo\Core\Core;
 use Redaxo\Core\Filesystem\Url;
+use Redaxo\Core\Language\Language;
 use Redaxo\Core\MediaPool\Media;
 
 use function array_search;
 use function in_array;
+use function is_string;
+use function Redaxo\Core\View\escape;
+use function strtolower;
 use function usort;
 
 /**
  * Öffentliche Schnittstelle für Templates, Module und andere AddOns (z. B. fluid): was der Video-Editor zu einem
  * Video weiß – Poster und Web-Fassungen.
  *
+ *     echo VideoEditor::html('film.mov');                 // fertiges <video> mit Poster, Fassungen, Untertiteln
+ *     echo VideoEditor::html('loop.mp4', ['background' => true]);
+ *
  *     $poster = VideoEditor::poster('film.mov');          // Media|null
  *     foreach (VideoEditor::sources('film.mov') as $s) {  // beste Quelle zuerst
  *         echo '<source src="' . $s['url'] . '" type="' . $s['type'] . '">';
  *     }
+ *     VideoEditor::tracks('film.mov');                    // Untertitel und Kapitel
  *
  * Wer prüfen will, ob das AddOn da ist: class_exists(\FriendsOfRedaxo\VideoEditor\VideoEditor::class).
  */
@@ -85,6 +93,80 @@ final class VideoEditor
         $user = Core::getUser();
 
         return null !== $user && VideoEditorAddon::allowed($user) ? Url::backendPage('mediapool/media', ['file_name' => '__FILE__']) : null;
+    }
+
+    /**
+     * Untertitel und Kapitel des Videos, Untertitel zuerst.
+     *
+     * @return list<array{file: string, url: string, lang: string, kind: string, label: string}>
+     */
+    public static function tracks(string $file): array
+    {
+        $list = [];
+        foreach (Tracks::of($file) as $track) {
+            $media = Media::get($track['file']);
+            if (null !== $media) {
+                $list[] = ['file' => $media->fileName, 'url' => TrackApi::url($media), 'lang' => $track['lang'], 'kind' => $track['role'], 'label' => $track['name']];
+            }
+        }
+
+        return $list;
+    }
+
+    /**
+     * Fertiges <video>-Element.
+     *
+     * Optionen:
+     *  - background (bool)  stumm, automatisch, in Schleife, ohne Bedienelemente und Untertitel; kleinere Fassung
+     *  - captions (bool|string)  Untertitel gleich einschalten: true = Sprache der Seite, oder ein Kürzel
+     *  - poster (string|false)   anderes Poster (Dateiname) oder keines
+     *  - preload (string)        metadata (Standard), none, auto
+     *  - label (string)          zugänglicher Name (aria-label)
+     *  - class (string)          CSS-Klasse
+     *
+     * @param array{background?: bool, captions?: bool|string, poster?: string|false, preload?: string, label?: string, class?: string} $options
+     */
+    public static function html(string $file, array $options = []): string
+    {
+        $video = Media::get($file);
+        if (null === $video) {
+            return '';
+        }
+        $background = (bool) ($options['background'] ?? false);
+        $posterOption = $options['poster'] ?? null;
+        $poster = false === $posterOption ? null : (is_string($posterOption) && '' !== $posterOption ? Media::get($posterOption) : self::poster($file));
+        $preload = in_array($options['preload'] ?? '', ['none', 'metadata', 'auto'], true) ? $options['preload'] : 'metadata';
+
+        $attributes = $background
+            ? ' muted autoplay loop playsinline disablepictureinpicture aria-hidden="true"'
+            : ' controls playsinline preload="' . $preload . '"';
+        if (null !== $poster) {
+            $attributes .= ' poster="' . escape($poster->getUrl()) . '"';
+        }
+        if (!$background && isset($options['label']) && '' !== $options['label']) {
+            $attributes .= ' aria-label="' . escape($options['label']) . '"';
+        }
+        if (isset($options['class']) && '' !== $options['class']) {
+            $attributes .= ' class="' . escape($options['class']) . '"';
+        }
+
+        $html = '<video' . $attributes . '>';
+        foreach (self::sources($file, $background) as $source) {
+            $html .= '<source src="' . escape($source['url']) . '" type="' . escape($source['type']) . '">';
+        }
+        if (!$background) {
+            $captions = $options['captions'] ?? false;
+            $wanted = true === $captions ? Language::getCurrent()->code : (is_string($captions) ? strtolower($captions) : null);
+            $on = false;
+            foreach (self::tracks($file) as $track) {
+                $default = !$on && null !== $wanted && 'chapters' !== $track['kind'] && $track['lang'] === $wanted;
+                $on = $on || $default;
+                $html .= '<track kind="' . escape($track['kind']) . '" src="' . escape($track['url']) . '" srclang="' . escape($track['lang'])
+                    . '" label="' . escape($track['label']) . '"' . ($default ? ' default' : '') . '>';
+            }
+        }
+
+        return $html . '</video>';
     }
 
     /** Video im Medienpool bearbeiten (Backend) – null, wenn der angemeldete Benutzer es nicht darf */

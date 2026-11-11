@@ -13,6 +13,7 @@ use Redaxo\Core\Filesystem\Path;
 use Redaxo\Core\Filesystem\Url;
 use Redaxo\Core\Http\Request;
 use Redaxo\Core\Http\Response;
+use Redaxo\Core\Language\Language;
 use Redaxo\Core\MediaManager\MediaManager;
 use Redaxo\Core\MediaPool\Media;
 use Redaxo\Core\Security\User;
@@ -22,6 +23,8 @@ use Throwable;
 
 use function array_map;
 use function in_array;
+use function is_array;
+use function json_decode;
 use function strtolower;
 
 /**
@@ -32,6 +35,10 @@ use function strtolower;
  *  - action=poster    Standbild an der Stelle `time` (Sekunden) als Poster
  *  - action=cut       Schneiden: `segments` (JSON [[start, ende], …] in Sekunden, die bleiben), `exact` 0|1, mode
  *  - action=frames    Vorschaubilder für die Zeitleiste
+ *  - action=track     Einträge einer Spur (track)
+ *  - action=track_parse   VTT/SRT-Inhalt (content) einlesen und säubern – zum Übernehmen in den Editor
+ *  - action=track_save    Spur speichern (track leer = neu, lang, role, label, cues JSON in ms)
+ *  - action=track_delete  Spur lösen (und löschen, wenn sonst nicht verwendet)
  *  - action=cancel    Auftrag abbrechen (job)
  *  - action=retry     Auftrag erneut versuchen (job)
  *  - action=jobs      nur die Aufträge (zum Nachfragen des Fortschritts)
@@ -61,13 +68,22 @@ final class Api extends ApiFunction
             $media = self::media($user);
             $action = Request::post('action', 'string', 'info');
             // nur ansehen ist ohne Bearbeitungsrecht erlaubt
-            if (!in_array($action, ['info', 'jobs'], true) && !VideoEditorAddon::allowed($user)) {
+            if (!in_array($action, ['info', 'jobs', 'track'], true) && !VideoEditorAddon::allowed($user)) {
                 throw new UserMessageException(I18n::msg('video_editor_no_permission'));
             }
             $data = match ($action) {
                 'info' => self::info($media, $user),
                 'optimize' => self::optimize($media, $user),
                 'cut' => self::cut($media, $user),
+                'track' => ['cues' => self::trackOf($media, Request::post('track', 'string', ''))],
+                'track_parse' => ['cues' => Subtitles::parse(Request::post('content', 'string', ''))
+                    ?? throw new UserMessageException(I18n::msg('video_editor_track_parse_error'))],
+                'track_save' => self::trackSave($media),
+                'track_delete' => (static function () use ($media): array {
+                    Tracks::remove($media, Request::post('track', 'string', ''));
+
+                    return ['tracks' => Tracks::of($media->fileName)];
+                })(),
                 'frames' => [
                     'frames' => Frames::of($media, (float) (Ffmpeg::probe(Path::media($media->fileName))['format']['duration'] ?? 0)),
                     'keyframes' => Cut::keyframes(Path::media($media->fileName)),
@@ -141,6 +157,12 @@ final class Api extends ApiFunction
             'versions' => self::versions($media),
             'source' => Links::sourceOf($media->fileName),
             'poster' => null !== $poster && ($p = Media::get($poster)) ? self::posterItem($p) : null,
+            'tracks' => array_map(static function (array $track): array {
+                $file = Media::get($track['file']);
+
+                return $track + ['url' => null !== $file ? TrackApi::url($file) : null];
+            }, Tracks::of($media->fileName)),
+            'lang' => Language::getCurrent()->code,
         ];
     }
 
@@ -192,6 +214,37 @@ final class Api extends ApiFunction
         Worker::start();
 
         return ['jobs' => self::jobs($media)];
+    }
+
+    /**
+     * @throws UserMessageException
+     * @return list<array{start: int, end: int, text: string, settings: string}>
+     */
+    private static function trackOf(Media $media, string $track): array
+    {
+        foreach (Tracks::of($media->fileName) as $item) {
+            if ($item['file'] === $track) {
+                return Tracks::read($track);
+            }
+        }
+        throw new UserMessageException(I18n::msg('video_editor_not_found'));
+    }
+
+    /**
+     * @throws UserMessageException
+     * @return array<string, mixed>
+     */
+    private static function trackSave(Media $media): array
+    {
+        $cues = json_decode(Request::post('cues', 'string', '[]'), true);
+        $cues = Subtitles::clean(is_array($cues) ? $cues : []);
+        if ([] === $cues) {
+            throw new UserMessageException(I18n::msg('video_editor_track_empty'));
+        }
+        $file = Tracks::save($media, Request::post('track', 'string', '') ?: null, Request::post('lang', 'string', ''),
+            Request::post('role', 'string', 'subtitles'), Request::post('label', 'string', ''), $cues);
+
+        return ['track' => $file, 'tracks' => Tracks::of($media->fileName)];
     }
 
     /**

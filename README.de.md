@@ -2,8 +2,8 @@
 
 # Video-Editor für REDAXO 6
 
-Videos direkt im Medienpool bearbeiten: **analysieren**, **für das Web optimieren**, **schneiden** und ein **Poster**
-wählen – mit ffmpeg, als Aufträge im Hintergrund. Das Gegenstück zum [Image-Editor](https://github.com/FriendsOfREDAXO/image_editor).
+Videos direkt im Medienpool bearbeiten: **analysieren**, **für das Web optimieren**, **schneiden**, ein **Poster**
+wählen und **Untertitel** schreiben – mit ffmpeg, als Aufträge im Hintergrund. Das Gegenstück zum [Image-Editor](https://github.com/FriendsOfREDAXO/image_editor).
 
 ![Video-Panel in der Medien-Detailansicht: Vorschau, Bewertung, Aufträge und Fassungen](https://raw.githubusercontent.com/FriendsOfREDAXO/video_editor/assets/ve-panel-page.png)
 
@@ -14,12 +14,13 @@ wählen – mit ffmpeg, als Aufträge im Hintergrund. Das Gegenstück zum [Image
 - **Schneiden** – Zeitleiste mit Vorschaubildern, teilen, Abschnitte entfernen, Ränder ziehen; schnell ohne Neukodierung
   oder bildgenau
 - **Poster** – Standbild auf das Bild genau wählen
+- **Untertitel und Kapitel** – Editor mit Live-Vorschau, Import von VTT und SRT, beim Schneiden automatisch mitgeschnitten
 - **Ergebnis** als neue, verknüpfte Fassung oder anstelle des Originals – Verwendungen bleiben erhalten
 - **Aufträge im Hintergrund** mit Fortschritt, Abbrechen und erneut Versuchen; immer nur einer zur Zeit
 - **Rechte** in drei Stufen: ansehen, bearbeiten, Original ersetzen
 
 > Die Neuentwicklung für REDAXO 6 übernimmt Ideen aus dem AddOn [ffmpeg](https://github.com/FriendsOfREDAXO/ffmpeg) für
-> REDAXO 5. Untertitel (WebVTT) folgen in einer der nächsten Versionen.
+> REDAXO 5.
 
 ## Installation
 
@@ -96,6 +97,10 @@ Zwei Arten zu schneiden:
 
 ![Schneller Schnitt: Schlüsselbilder und gelb markierter Vorlauf](https://raw.githubusercontent.com/FriendsOfREDAXO/video_editor/assets/ve-cut-fast.png)
 
+Untertitel werden mitgeschnitten: Einträge in entfernten Teilen fallen weg, angeschnittene werden gekürzt, alles danach
+rückt nach vorn. Die neue Fassung bekommt eigene Untertitel-Dateien; ersetzt der Schnitt das Original, werden dessen
+Dateien angepasst.
+
 ## Poster
 
 ![Poster wählen: Video mit Schritten um eine Sekunde und ein Bild](https://raw.githubusercontent.com/FriendsOfREDAXO/video_editor/assets/ve-poster.png)
@@ -103,6 +108,24 @@ Zwei Arten zu schneiden:
 Stelle im Video suchen, mit „±1 Bild“ genau treffen, übernehmen: Das Standbild landet als JPEG im Medienpool, in derselben
 Kategorie, und ist mit dem Video verknüpft. Ein neues Poster ersetzt die Datei des bisherigen – wo es verwendet wird,
 erscheint gleich das neue.
+
+## Untertitel und Kapitel
+
+![Untertitel-Editor: Video mit Live-Vorschau, Einträge mit Zeiten und Text](https://raw.githubusercontent.com/FriendsOfREDAXO/video_editor/assets/ve-subtitles.png)
+
+Je Video beliebig viele Spuren – Untertitel, Untertitel für Gehörlose (mit Geräuschen) und Kapitel, je Sprache. Der
+Editor zeigt jede Änderung sofort im Video:
+
+- **Eintrag am Abspielkopf** (Taste N) – beginnt an der aktuellen Stelle, endet nach zwei Sekunden oder vor dem nächsten
+- Anfang und Ende per Knopf auf den Abspielkopf setzen, Zeiten als `1:05.250` oder `65.25` eintippen
+- der laufende Eintrag ist markiert, ▶ spielt ab seinem Anfang
+- **Alle verschieben** um einige Sekunden – etwa wenn eine Datei nicht zum Schnitt passt
+- **Datei laden** – WebVTT oder SubRip (SRT), auch in UTF-16 oder Windows-1252
+
+Gespeichert wird als WebVTT im Medienpool (`video-de.vtt`, `video-en-cc.vtt`, `video-de-chapters.vtt`), verknüpft mit
+dem Video. Beim Speichern und Laden wird gesäubert: nur erlaubte WebVTT-Tags (`<b>`, `<i>`, `<u>`, `<v Sprecher>`,
+`<lang>`, `<c>`, `<ruby>`), keine STYLE-/REGION-Blöcke, kein HTML. Für die Website liefert der Video-Editor die Spuren als
+`text/vtt` aus – viele Webserver kennen die Endung nicht und schicken `text/plain`, das Browser ablehnen.
 
 ## Aufträge
 
@@ -122,7 +145,7 @@ Der Cronjob `video_editor_work` (jede Minute) holt nach, was liegen geblieben is
 | Wer | Darf |
 | --- | --- |
 | jeder mit Zugriff auf die Medienkategorie | Vorschau, Analyse, Aufträge und Fassungen ansehen |
-| `video_editor[]` | optimieren (als neue Fassung), schneiden, Poster wählen, Aufträge abbrechen und neu starten |
+| `video_editor[]` | optimieren (als neue Fassung), schneiden, Poster wählen, Untertitel bearbeiten, Aufträge abbrechen und neu starten |
 | zusätzlich `video_editor[replace]` (Optionen) | das Original durch das Ergebnis ersetzen |
 | Admins | alles |
 
@@ -131,16 +154,27 @@ gesperrt. Geprüft wird auf dem Server, die Oberfläche blendet nur aus, was nic
 
 ## Für Entwickler
 
-Poster und Web-Fassungen eines Videos für eigene Templates und Module:
+Fertiges `<video>` mit Poster, Web-Fassungen und Untertiteln:
 
 ```php
 use FriendsOfRedaxo\VideoEditor\VideoEditor;
 
+echo VideoEditor::html('film.mov', ['label' => 'Unser Film', 'captions' => true]);  // Untertitel in der Sprache der Seite an
+echo VideoEditor::html('loop.mp4', ['background' => true]);                          // stumm, Schleife, ohne Bedienung
+```
+
+Optionen: `background`, `captions` (`true` oder Sprachkürzel), `poster` (anderer Dateiname oder `false`), `preload`
+(`metadata`, `none`, `auto`), `label`, `class`.
+
+Die Bausteine einzeln:
+
+```php
 $poster = VideoEditor::poster('film.mov');          // Media|null – zuletzt gewähltes Poster
 foreach (VideoEditor::sources('film.mov') as $s) {  // beste Quelle zuerst: WebM, MP4-Web-Fassung, sonst Original
     echo '<source src="' . $s['url'] . '" type="' . $s['type'] . '">';
 }
 VideoEditor::sources('film.mov', small: true);      // 720p vor 1080p, z. B. für Hintergrundvideos
+VideoEditor::tracks('film.mov');                    // Untertitel/Kapitel: file, url (text/vtt), lang, kind, label
 VideoEditor::editUrl('film.mov');                   // Bearbeiten im Medienpool – null ohne Recht
 ```
 
@@ -150,7 +184,8 @@ Wer den Video-Editor nur nutzen will, wenn er installiert ist, prüft vorher
 ### fluid
 
 [fluid](https://github.com/FriendsOfREDAXO/fluid) braucht den Video-Editor nicht, nutzt ihn aber, wenn er da ist: Der
-Block „Video“ zeigt ohne eigenes Vorschaubild das hier gewählte Poster und liefert die Web-Fassungen aus, das
+Block „Video“ zeigt ohne eigenes Vorschaubild das hier gewählte Poster, liefert die Web-Fassungen aus und übernimmt die
+Untertitel (samt Transkript „Text zum Video“), wenn im Block keine gewählt sind; das
 Hintergrundvideo im Hero nimmt die kleinere Fassung, und das Medienfeld bekommt bei Videos den Knopf „Video bearbeiten“.
 
 ## Technik
@@ -163,7 +198,8 @@ Hintergrundvideo im Hero nimmt die kleinere Fassung, und das Medienfeld bekommt 
 
 ## Tests
 
-Die Integrationstests prüfen die Rechte (ansehen, bearbeiten, ersetzen, fremde Kategorie). Sie brauchen eine
+Die Unit-Tests prüfen das Einlesen, Säubern und Umrechnen von Untertiteln. Die Integrationstests prüfen die Rechte
+(ansehen, bearbeiten, ersetzen, fremde Kategorie). Sie brauchen eine
 REDAXO-Installation mit Datenbank und ffmpeg, legen eigene Testdaten an (alles mit „ve-test“ im Namen, kurze Videos
 erzeugt ffmpeg) und räumen danach auf:
 

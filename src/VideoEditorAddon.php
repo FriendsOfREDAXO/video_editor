@@ -79,6 +79,8 @@ final class VideoEditorAddon extends Addon
             ->ensureColumn(new Column('kind', 'varchar(20)'))
             ->ensureColumn(new Column('label', 'varchar(255)', true))
             ->ensureColumn(new Column('preset', 'varchar(20)', true))
+            ->ensureColumn(new Column('lang', 'varchar(20)', true))
+            ->ensureColumn(new Column('role', 'varchar(20)', true))
             ->ensureColumn(new Column('createdate', 'datetime'))
             ->ensureIndex(new Index('source', ['source']))
             ->ensureIndex(new Index('target', ['target']))
@@ -165,7 +167,7 @@ final class VideoEditorAddon extends Addon
     private static function texts(): array
     {
         $keys = ['title', 'loading', 'error', 'no_ffmpeg', 'score', 'optimize', 'optimize_title', 'poster', 'poster_title',
-            'poster_take', 'poster_current', 'preview', 'mode_replace_denied', 'cut', 'cut_title', 'cut_help', 'cut_timeline', 'cut_segment', 'cut_split', 'cut_in', 'cut_out', 'cut_remove', 'cut_undo', 'cut_reset', 'cut_play', 'cut_stop', 'cut_length', 'cut_method', 'cut_fast', 'cut_fast_text', 'cut_exact', 'cut_exact_text', 'cut_keys', 'cut_snap_note', 'cut_snap_none', 'jobs', 'versions', 'source', 'cancel', 'retry', 'start', 'close', 'mode',
+            'poster_take', 'poster_current', 'preview', 'mode_replace_denied', 'cut', 'cut_title', 'cut_help', 'cut_timeline', 'cut_segment', 'cut_split', 'cut_in', 'cut_out', 'cut_remove', 'cut_undo', 'cut_reset', 'cut_play', 'cut_stop', 'cut_length', 'cut_method', 'cut_fast', 'cut_fast_text', 'cut_exact', 'cut_exact_text', 'cut_keys', 'cut_snap_note', 'cut_snap_none', 'tracks', 'track_add', 'track_edit', 'track_title', 'track_lang', 'track_role', 'track_role_subtitles', 'track_role_captions', 'track_role_chapters', 'track_label', 'track_cues', 'track_new_cue', 'track_from', 'track_to', 'track_text', 'track_set_start', 'track_set_end', 'track_jump', 'track_delete_cue', 'track_shift', 'track_shift_apply', 'track_import', 'track_save', 'track_remove', 'track_remove_confirm', 'track_none', 'track_list', 'track_keys', 'track_time_invalid', 'jobs', 'versions', 'source', 'cancel', 'retry', 'start', 'close', 'mode',
             'mode_version', 'mode_replace', 'mode_replace_note', 'recommended', 'fast', 'status_queued', 'status_running',
             'status_done', 'status_failed', 'status_canceled', 'open', 'apply', 'hints_none', 'duration', 'resolution',
             'bitrate', 'codec', 'faststart_yes', 'faststart_no', 'no_audio'];
