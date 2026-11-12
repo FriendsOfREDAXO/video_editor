@@ -437,10 +437,36 @@
                 const r = timeline.getBoundingClientRect();
                 return Math.max(0, Math.min(duration, ((clientX - r.left) / r.width) * duration));
             };
-            const seek = (s) => {
-                video.currentTime = Math.max(0, Math.min(duration, s));
-                draw();
+            // Springen beim Ziehen: immer nur ein Sprung gleichzeitig, danach gleich zum zuletzt gewünschten Ziel –
+            // sonst stauen sich die Sprünge (jeder ist eine Range-Anfrage an den Stream), und das Bild hinkt der
+            // roten Linie hinterher. Während des Ziehens schnell (fastSeek, wo vorhanden), beim Loslassen bildgenau.
+            let pendingSeek = null;
+            let seekBusy = false;
+            let seekFast = false;
+            let scrubTarget = null;
+            const applySeek = () => {
+                if (pendingSeek === null) {
+                    seekBusy = false;
+                    return;
+                }
+                seekBusy = true;
+                const target = pendingSeek;
+                pendingSeek = null;
+                if (seekFast && typeof video.fastSeek === 'function') video.fastSeek(target);
+                else video.currentTime = target;
             };
+            video.addEventListener('seeked', () => {
+                seekBusy = false;
+                applySeek();
+            });
+            const seek = (s, fast = false) => {
+                pendingSeek = Math.max(0, Math.min(duration, s));
+                seekFast = fast;
+                draw();
+                if (!seekBusy) applySeek();
+            };
+            // aktuelle Stelle – auch wenn ein Sprung noch aussteht
+            const position = () => (pendingSeek !== null ? pendingSeek : (video.currentTime || 0));
             const remember = () => {
                 history.push(JSON.stringify(segs));
                 if (history.length > 50) history.shift();
@@ -448,7 +474,7 @@
             const kept = () => effective().reduce((sum, [a, b]) => sum + (b - a), 0);
 
             const draw = () => {
-                const cur = video.currentTime || 0;
+                const cur = scrubTarget !== null ? scrubTarget : position();
                 head.style.left = pct(cur);
                 now.textContent = clock(cur) + ' / ' + clock(duration);
                 timeline.setAttribute('aria-valuenow', String(Math.round(cur * 10) / 10));
@@ -517,7 +543,7 @@
             const indexAt = (s) => segs.findIndex(([a, b]) => s >= a && s < b);
             const ops = {
                 split: () => {
-                    const cur = video.currentTime;
+                    const cur = position();
                     const i = indexAt(cur);
                     if (i < 0 || cur - segs[i][0] < MIN || segs[i][1] - cur < MIN) return;
                     remember();
@@ -527,14 +553,14 @@
                 in: () => {
                     const [, b] = segs[sel];
                     const prev = sel > 0 ? segs[sel - 1][1] : 0;
-                    const v = Math.max(prev, Math.min(video.currentTime, b - MIN));
+                    const v = Math.max(prev, Math.min(position(), b - MIN));
                     remember();
                     segs[sel] = [v, b];
                 },
                 out: () => {
                     const [a] = segs[sel];
                     const next = sel < segs.length - 1 ? segs[sel + 1][0] : duration;
-                    const v = Math.min(next, Math.max(video.currentTime, a + MIN));
+                    const v = Math.min(next, Math.max(position(), a + MIN));
                     remember();
                     segs[sel] = [a, v];
                 },
@@ -629,11 +655,13 @@
                         if (edge === 0) {
                             const prev = sel > 0 ? segs[sel - 1][1] : 0;
                             segs[sel] = [Math.max(prev, Math.min(v, b - MIN)), b];
-                            video.currentTime = segs[sel][0];
+                            scrubTarget = segs[sel][0];
+                            seek(scrubTarget, true);
                         } else {
                             const next = sel < segs.length - 1 ? segs[sel + 1][0] : duration;
                             segs[sel] = [a, Math.min(next, Math.max(v, a + MIN))];
-                            video.currentTime = segs[sel][1];
+                            scrubTarget = segs[sel][1];
+                            seek(scrubTarget, true);
                         }
                         render();
                     };
@@ -642,11 +670,20 @@
                         sel = Number(seg.dataset.seg);
                         render();
                     }
-                    move = (x) => seek(at(x));
+                    move = (x) => {
+                        scrubTarget = at(x);
+                        seek(scrubTarget, true);
+                    };
                     move(e.clientX);
                 }
                 const onMove = (ev) => move(ev.clientX);
                 const onUp = () => {
+                    // beim Loslassen bildgenau auf die gewählte Stelle
+                    if (scrubTarget !== null) {
+                        const target = scrubTarget;
+                        scrubTarget = null;
+                        seek(target);
+                    }
                     timeline.removeEventListener('pointermove', onMove);
                     timeline.removeEventListener('pointerup', onUp);
                     timeline.removeEventListener('pointercancel', onUp);
@@ -671,7 +708,7 @@
                 if (!b) return;
                 if (b.dataset.step) {
                     video.pause();
-                    seek(video.currentTime + Number(b.dataset.step));
+                    seek(position() + Number(b.dataset.step));
                 } else if (b.dataset.cut) {
                     run(b.dataset.cut);
                 }
@@ -709,7 +746,7 @@
                 } else if ((key === 'arrowleft' || key === 'arrowright') && !onButton) {
                     e.preventDefault();
                     video.pause();
-                    seek(video.currentTime + (key === 'arrowleft' ? -1 : 1) * (e.shiftKey ? 1 : frame));
+                    seek(position() + (key === 'arrowleft' ? -1 : 1) * (e.shiftKey ? 1 : frame));
                 } else if ((key === 'home' || key === 'end') && !onButton) {
                     e.preventDefault();
                     seek(key === 'home' ? 0 : duration);
