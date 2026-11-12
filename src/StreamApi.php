@@ -13,6 +13,11 @@ use Redaxo\Core\Http\Request;
 use Redaxo\Core\Http\Response;
 use Redaxo\Core\MediaPool\Media;
 
+use function session_status;
+use function session_write_close;
+
+use const PHP_SESSION_ACTIVE;
+
 /**
  * Video für den Editor ausliefern (GET, nur im Backend): mit Range-Anfragen, damit der Browser springen kann – auch
  * wenn der Webserver /media ohne Range ausliefert. Nur lesend, daher ohne CSRF-Token.
@@ -32,6 +37,11 @@ final class StreamApi extends ApiFunction
             Response::setStatus(Response::HTTP_NOT_FOUND);
             Response::sendContent('', 'text/plain');
             exit;
+        }
+        // Session sofort freigeben: sonst wartet jede weitere Anfrage (jeder Sprung im Video ist eine Range-Anfrage)
+        // auf das Ende der vorigen – beim Ziehen im Schnitt-Editor hinkt das Bild dann hinterher
+        if (PHP_SESSION_ACTIVE === session_status()) {
+            session_write_close();
         }
         Response::setHeader('Cache-Control', 'private, max-age=3600');
         Response::sendFile(Path::media($media->fileName), (string) $media->type);
